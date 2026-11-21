@@ -9,8 +9,6 @@ import { fileURLToPath } from 'node:url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Ensure workbox-build temporary files resolve within the project workspace
-// to prevent EPERM when running in restricted environments or on Windows
 const tempDir = path.resolve(__dirname, 'node_modules/.cache/pwa-temp');
 if (!fs.existsSync(tempDir)) {
   fs.mkdirSync(tempDir, { recursive: true });
@@ -19,6 +17,7 @@ process.env.TEMP = tempDir;
 process.env.TMP = tempDir;
 
 export default defineConfig({
+  base: '/',
   plugins: [
     react(),
     tailwindcss(),
