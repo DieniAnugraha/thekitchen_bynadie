@@ -1,0 +1,24 @@
+{
+  "name": "the-kitchen-pwa",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "postinstall": "node -e \"try{const fs=require('fs');const p='node_modules/@tailwindcss/vite/dist/index.mjs';if(fs.existsSync(p)){let c=fs.readFileSync(p,'utf8');if(c.includes('this.compiler.globs);')){fs.writeFileSync(p,c.replace('this.compiler.globs);','(this.compiler.globs||this.compiler.sources||[]);'));}}}catch(e){}\""
+  },
+  "dependencies": {
+    "lucide-react": "^0.454.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.0.0",
+    "@vitejs/plugin-react": "^4.3.3",
+    "tailwindcss": "^4.0.0",
+    "vite": "^5.4.10",
+    "vite-plugin-pwa": "^0.21.1"
+  }
+}
