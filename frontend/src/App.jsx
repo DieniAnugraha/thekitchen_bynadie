@@ -15,17 +15,51 @@ import BottomNav from './components/BottomNav';
 
 const COVER_DURATION_MS = 2600;
 
+const getUserOrderStorageKey = (currentUser) => {
+  const identifier =
+    currentUser?.id ?? currentUser?.username ?? currentUser?.name;
+  return identifier
+    ? `the_kitchen_my_orders_${String(identifier).toLowerCase()}`
+    : null;
+};
+
+const getSavedOrderIdsForUser = (currentUser) => {
+  const key = getUserOrderStorageKey(currentUser);
+  if (!key) return [];
+  try {
+    const parsed = JSON.parse(localStorage.getItem(key) || '[]');
+    return Array.isArray(parsed) ? parsed.map(String) : [];
+  } catch {
+    return [];
+  }
+};
+
+const saveOrderIdForUser = (currentUser, orderId) => {
+  const key = getUserOrderStorageKey(currentUser);
+  if (!key || !orderId) return;
+  const existing = getSavedOrderIdsForUser(currentUser);
+  const next = Array.from(new Set([String(orderId), ...existing]));
+  localStorage.setItem(key, JSON.stringify(next));
+};
+
 const filterOrdersForUser = (allOrders, currentUser) => {
   if (!Array.isArray(allOrders) || !currentUser) return [];
   if (currentUser.role === 'admin') return allOrders;
 
-  const userId = currentUser.id ?? null;
+  const savedOrderIds = getSavedOrderIdsForUser(currentUser);
   const userName = (currentUser.name || '').trim().toLowerCase();
   const userUsername = (currentUser.username || '').trim().toLowerCase();
 
   return allOrders.filter((order) => {
-    if (order?.user_id !== undefined && order?.user_id !== null && userId !== null) {
-      return String(order.user_id) === String(userId);
+    if (order?.id && savedOrderIds.includes(String(order.id))) {
+      return true;
+    }
+    if (
+      order?.user_id !== undefined &&
+      order?.user_id !== null &&
+      currentUser.id !== undefined
+    ) {
+      return String(order.user_id) === String(currentUser.id);
     }
     const orderCustomer = (order?.customer_name || '').trim().toLowerCase();
     return (
@@ -115,6 +149,12 @@ export default function App() {
     }
   }, [user?.id, user?.name]);
 
+  useEffect(() => {
+    if (user && activeTab === 'orders') {
+      fetchOrders(user);
+    }
+  }, [activeTab, user?.id]);
+
   const fetchMenus = async (category = selectedCategory, search = searchQuery) => {
     setLoadingMenus(true);
     try {
@@ -140,11 +180,12 @@ export default function App() {
     try {
       const res = await fetch(`${API_URL}/api/orders`);
       const data = await res.json();
-      if (Array.isArray(data)) {
-        setOrders(filterOrdersForUser(data, targetUser));
-      } else {
-        setOrders([]);
-      }
+      const orderList = Array.isArray(data)
+        ? data
+        : Array.isArray(data?.data)
+          ? data.data
+          : [];
+      setOrders(filterOrdersForUser(orderList, targetUser));
     } catch (err) {
       console.error('Gagal memuat pesanan:', err);
       setOrders([]);
@@ -441,11 +482,18 @@ export default function App() {
         }),
       });
       if (res.ok) {
+        const createdOrder = await res.json().catch(() => null);
+        const createdId =
+          createdOrder?.id ?? createdOrder?.data?.id ?? createdOrder?.order?.id;
+        if (createdId) {
+          saveOrderIdForUser(user, createdId);
+        }
+
         setCart([]);
         setTableNumber('');
         setCheckoutMessage(`Pesanan (${orderType}) berhasil dikirim ke dapur!`);
         setOrdersSubTab('history');
-        fetchOrders(user);
+        await fetchOrders(user);
       }
     } catch (err) {
       console.error('Checkout gagal:', err);
