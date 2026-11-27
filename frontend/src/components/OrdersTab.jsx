@@ -13,6 +13,21 @@ import { formatRupiah } from '../utils/format';
 const FALLBACK_IMAGE =
   'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=600&q=80';
 
+const TABLE_OPTIONS = [
+  'Meja 01',
+  'Meja 02',
+  'Meja 03',
+  'Meja 04',
+  'Meja 05',
+  'Meja 06',
+  'Meja 07',
+  'Meja 08',
+  'Meja 09',
+  'Meja 10',
+  'Meja 11',
+  'Meja 12',
+];
+
 export default function OrdersTab({
   cart = [],
   cartCount = 0,
@@ -52,6 +67,13 @@ export default function OrdersTab({
     onUpdateCartNote(idx, draftNote);
     setEditingIndex(null);
     setDraftNote('');
+  };
+
+  const handleOrderTypeSelect = (type) => {
+    setOrderType(type);
+    if (type !== 'Dine In') {
+      setTableNumber('');
+    }
   };
 
   return (
@@ -141,7 +163,9 @@ export default function OrdersTab({
                           {item.name}
                         </p>
                         <p className="text-xs font-bold text-[#284EA5]">
-                          {formatRupiah(Number(item.price || 0) * Number(item.quantity || 1))}
+                          {formatRupiah(
+                            Number(item.price || 0) * Number(item.quantity || 1)
+                          )}
                         </p>
                         <p className="text-[11px] text-[#6B7280]">
                           Klik kartu untuk buka detail menu
@@ -231,7 +255,7 @@ export default function OrdersTab({
                     <button
                       key={type}
                       type="button"
-                      onClick={() => setOrderType(type)}
+                      onClick={() => handleOrderTypeSelect(type)}
                       className={`py-2 rounded-full text-xs font-semibold transition cursor-pointer ${
                         orderType === type
                           ? 'bg-[#284EA5] text-white'
@@ -264,18 +288,29 @@ export default function OrdersTab({
                     ? 'Nomor Meja *'
                     : 'Catatan Pengambilan (Opsional)'}
                 </label>
-                <input
-                  type="text"
-                  required={orderType === 'Dine In'}
-                  value={tableNumber}
-                  onChange={(e) => setTableNumber(e.target.value)}
-                  placeholder={
-                    orderType === 'Dine In'
-                      ? 'Contoh: 05 atau 12'
-                      : 'Contoh: ambil jam 19.00, pisah sambal'
-                  }
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-[#FAF9F6] border border-[#EFECE6] text-sm focus:outline-none focus:border-[#284EA5]"
-                />
+                {orderType === 'Dine In' ? (
+                  <select
+                    required
+                    value={tableNumber}
+                    onChange={(e) => setTableNumber(e.target.value)}
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-[#FAF9F6] border border-[#EFECE6] text-sm text-[#1E2532] focus:outline-none focus:border-[#284EA5]"
+                  >
+                    <option value="">Pilih nomor meja</option>
+                    {TABLE_OPTIONS.map((table) => (
+                      <option key={table} value={table}>
+                        {table}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    type="text"
+                    value={tableNumber}
+                    onChange={(e) => setTableNumber(e.target.value)}
+                    placeholder="Contoh: ambil jam 19.00, pisah sambal"
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-[#FAF9F6] border border-[#EFECE6] text-sm focus:outline-none focus:border-[#284EA5]"
+                  />
+                )}
               </div>
 
               <div className="flex items-center justify-between pt-2 border-t border-[#EFECE6]">

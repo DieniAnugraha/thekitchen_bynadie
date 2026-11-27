@@ -1,6 +1,39 @@
 import React, { useState } from 'react';
 import { Eye, EyeOff, Lock, Phone, User, UserPlus } from 'lucide-react';
 
+const NAME_ALLOWED_REGEX = /^[A-Za-zÀ-ÖØ-öø-ÿ\s'.-]+$/;
+const PHONE_ALLOWED_REGEX = /^[\d\s+-]*$/;
+
+function validateRegisterInput({ name, username, phone, password }) {
+  const cleanName = String(name || '').trim().replace(/\s+/g, ' ');
+  const cleanUsername = String(username || '').trim();
+  const cleanPhone = String(phone || '').trim();
+  const cleanPassword = String(password || '');
+  const phoneDigits = cleanPhone.replace(/\D/g, '');
+
+  if (!cleanName || !cleanUsername || !cleanPhone || !cleanPassword) {
+    return 'Semua kolom wajib diisi.';
+  }
+
+  if (cleanName.length < 2 || !NAME_ALLOWED_REGEX.test(cleanName)) {
+    return 'Nama hanya boleh berisi huruf dan spasi (tanpa angka atau karakter khusus).';
+  }
+
+  if (cleanUsername.length < 3) {
+    return 'Username minimal 3 karakter.';
+  }
+
+  if (phoneDigits.length < 8 || phoneDigits.length > 15) {
+    return 'Nomor HP tidak valid (minimal 8 digit dan maksimal 15 digit angka).';
+  }
+
+  if (cleanPassword.length < 6) {
+    return 'Password minimal 6 karakter.';
+  }
+
+  return '';
+}
+
 export default function LoginView({
   loginForm,
   setLoginForm,
@@ -22,12 +55,48 @@ export default function LoginView({
   const [regError, setRegError] = useState('');
   const [regLoading, setRegLoading] = useState(false);
 
+  const handleNameChange = (e) => {
+    const raw = e.target.value;
+    const sanitized = raw.replace(/[^A-Za-zÀ-ÖØ-öø-ÿ\s'.-]/g, '');
+    setRegForm((prev) => ({ ...prev, name: sanitized }));
+    if (raw !== sanitized) {
+      setRegError(
+        'Nama hanya boleh berisi huruf dan spasi (angka dan karakter khusus tidak diizinkan).'
+      );
+    } else if (regError) {
+      setRegError('');
+    }
+  };
+
+  const handlePhoneChange = (e) => {
+    const raw = e.target.value;
+    const sanitized = PHONE_ALLOWED_REGEX.test(raw)
+      ? raw
+      : raw.replace(/[^\d\s+-]/g, '');
+    setRegForm((prev) => ({ ...prev, phone: sanitized }));
+    if (regError) {
+      setRegError('');
+    }
+  };
+
   const handleRegisterSubmit = async (e) => {
     e.preventDefault();
     setRegError('');
+
+    const validationMessage = validateRegisterInput(regForm);
+    if (validationMessage) {
+      setRegError(validationMessage);
+      return;
+    }
+
     setRegLoading(true);
     try {
-      await onRegister(regForm);
+      await onRegister({
+        ...regForm,
+        name: regForm.name.trim().replace(/\s+/g, ' '),
+        username: regForm.username.trim(),
+        phone: regForm.phone.trim(),
+      });
     } catch (err) {
       setRegError(err?.message || 'Gagal mendaftar akun baru.');
     } finally {
@@ -146,7 +215,7 @@ export default function LoginView({
             </button>
           </form>
         ) : (
-          <form onSubmit={handleRegisterSubmit} className="space-y-3.5">
+          <form onSubmit={handleRegisterSubmit} noValidate className="space-y-3.5">
             <div>
               <label className="block text-xs font-semibold text-[#6B7280] mb-1">
                 Nama Lengkap
@@ -155,8 +224,8 @@ export default function LoginView({
                 type="text"
                 required
                 value={regForm.name}
-                onChange={(e) => setRegForm({ ...regForm, name: e.target.value })}
-                placeholder="Masukkan nama lengkap kamu"
+                onChange={handleNameChange}
+                placeholder="Hanya huruf dan spasi"
                 className="w-full px-3.5 py-2.5 rounded-xl bg-[#FAF9F6] border border-[#EFECE6] text-sm focus:outline-none focus:border-[#284EA5]"
               />
             </div>
@@ -174,7 +243,7 @@ export default function LoginView({
                   onChange={(e) =>
                     setRegForm({ ...regForm, username: e.target.value })
                   }
-                  placeholder="Buat username unik"
+                  placeholder="Buat username unik (min. 3 karakter)"
                   className="w-full pl-10 pr-3.5 py-2.5 rounded-xl bg-[#FAF9F6] border border-[#EFECE6] text-sm focus:outline-none focus:border-[#284EA5]"
                 />
               </div>
@@ -189,11 +258,10 @@ export default function LoginView({
                 <input
                   type="tel"
                   required
+                  inputMode="tel"
                   value={regForm.phone}
-                  onChange={(e) =>
-                    setRegForm({ ...regForm, phone: e.target.value })
-                  }
-                  placeholder="Contoh: 081234567890"
+                  onChange={handlePhoneChange}
+                  placeholder="Contoh: 081234567890 (min. 8 digit)"
                   className="w-full pl-10 pr-3.5 py-2.5 rounded-xl bg-[#FAF9F6] border border-[#EFECE6] text-sm focus:outline-none focus:border-[#284EA5]"
                 />
               </div>
@@ -208,10 +276,12 @@ export default function LoginView({
                 <input
                   type={showRegPassword ? 'text' : 'password'}
                   required
+                  minLength={6}
                   value={regForm.password}
-                  onChange={(e) =>
-                    setRegForm({ ...regForm, password: e.target.value })
-                  }
+                  onChange={(e) => {
+                    setRegForm({ ...regForm, password: e.target.value });
+                    if (regError) setRegError('');
+                  }}
                   placeholder="Minimal 6 karakter"
                   className="w-full pl-10 pr-10 py-2.5 rounded-xl bg-[#FAF9F6] border border-[#EFECE6] text-sm focus:outline-none focus:border-[#284EA5]"
                 />

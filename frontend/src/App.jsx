@@ -69,6 +69,11 @@ const filterOrdersForUser = (allOrders, currentUser) => {
   });
 };
 
+const isMenuVisibleToCustomer = (item) => {
+  const status = String(item?.status || 'published').toLowerCase();
+  return status !== 'draft' && status !== 'archived';
+};
+
 export default function App() {
   const [showCover, setShowCover] = useState(true);
 
@@ -109,6 +114,7 @@ export default function App() {
   const [tableNumber, setTableNumber] = useState('');
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [checkoutMessage, setCheckoutMessage] = useState('');
+  const [adminToast, setAdminToast] = useState('');
 
   const [newMenu, setNewMenu] = useState({
     name: '',
@@ -117,6 +123,7 @@ export default function App() {
     category: 'Makanan Berat',
     image_url: '',
     is_featured: false,
+    status: 'published',
   });
 
   useEffect(() => {
@@ -155,7 +162,18 @@ export default function App() {
     }
   }, [activeTab, user?.id]);
 
-  const fetchMenus = async (category = selectedCategory, search = searchQuery) => {
+  const showAdminNotification = (message) => {
+    setAdminToast(message);
+    setTimeout(() => {
+      setAdminToast((current) => (current === message ? '' : current));
+    }, 2500);
+  };
+
+  const fetchMenus = async (
+    category = selectedCategory,
+    search = searchQuery,
+    currentRole = user?.role
+  ) => {
     setLoadingMenus(true);
     try {
       const params = new URLSearchParams();
@@ -163,7 +181,17 @@ export default function App() {
       if (search.trim()) params.append('search', search.trim());
       const res = await fetch(`${API_URL}/api/menus?${params.toString()}`);
       const data = await res.json();
-      if (Array.isArray(data)) setMenus(data);
+      if (Array.isArray(data)) {
+        const normalized = data.map((item) => ({
+          ...item,
+          status: item.status || 'published',
+        }));
+        const filteredByRole =
+          currentRole === 'admin'
+            ? normalized
+            : normalized.filter(isMenuVisibleToCustomer);
+        setMenus(filteredByRole);
+      }
     } catch (err) {
       console.error('Gagal memuat menu:', err);
     } finally {
@@ -232,14 +260,34 @@ export default function App() {
     }
   };
 
+  // 4a: Validasi ketat nama, password (>= 6 karakter), dan nomor telepon
   const handleRegister = async ({ name, username, phone, password }) => {
-    const cleanName = name.trim();
-    const cleanUsername = username.trim();
+    const cleanName = (name || '').trim().replace(/\s+/g, ' ');
+    const cleanUsername = (username || '').trim();
     const cleanPhone = (phone || '').trim();
-    const cleanPassword = password;
+    const cleanPassword = password || '';
 
     if (!cleanName || !cleanUsername || !cleanPhone || !cleanPassword) {
       throw new Error('Semua kolom wajib diisi.');
+    }
+
+    const nameRegex = /^[A-Za-zÀ-ÖØ-öø-ÿ\s'.-]+$/;
+    if (!nameRegex.test(cleanName) || cleanName.length < 2) {
+      throw new Error(
+        'Nama hanya boleh berisi huruf dan spasi (tanpa angka atau karakter khusus).'
+      );
+    }
+
+    if (cleanPassword.length < 6) {
+      throw new Error('Password minimal 6 karakter.');
+    }
+
+    const digitsOnly = cleanPhone.replace(/\D/g, '');
+    const phoneRegex = /^\+?[\d\s-]{8,16}$/;
+    if (!phoneRegex.test(cleanPhone) || digitsOnly.length < 8 || digitsOnly.length > 15) {
+      throw new Error(
+        'Nomor telepon tidak valid (gunakan 8–15 digit angka saja).'
+      );
     }
 
     const registeredUsers = JSON.parse(
@@ -293,7 +341,10 @@ export default function App() {
         };
       }
     } catch (err) {
-      if (err.message === 'Username sudah digunakan.') {
+      if (
+        err.message === 'Username sudah digunakan.' ||
+        err.message.includes('Registrasi gagal')
+      ) {
         throw err;
       }
     }
@@ -456,15 +507,16 @@ export default function App() {
     [cart]
   );
 
+  // 4b: Nilai meja berasal dari dropdown sehingga tidak mengandung huruf bebas
   const handleCheckout = async (e) => {
     e.preventDefault();
-    const cleanDetail = tableNumber.trim();
+    const cleanDetail = String(tableNumber || '').trim();
     if (!customerName.trim() || cart.length === 0) return;
     if (orderType === 'Dine In' && !cleanDetail) return;
 
     const formattedLocation =
       orderType === 'Dine In'
-        ? `Dine In • Meja ${cleanDetail}`
+        ? `Dine In • ${cleanDetail}`
         : cleanDetail
           ? `Take Away (${cleanDetail})`
           : 'Take Away';
@@ -500,25 +552,123 @@ export default function App() {
     }
   };
 
+  // 4c & 4d: Validasi harga > 0 dan dukungan status draft/arsip/published
   const handleAddMenu = async (e) => {
     e.preventDefault();
-    if (!newMenu.name || !newMenu.price) return;
-    const res = await fetch(`${API_URL}/api/menus`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(newMenu),
-    });
-    if (res.ok) {
-      setNewMenu({
-        name: '',
-        description: '',
-        price: '',
-        category: 'Makanan Berat',
-        image_url: '',
-        is_featured: false,
-      });
-      fetchMenus('Semua', '');
+    const numericPrice = Number(newMenu.price);
+    if (!newMenu.name.trim()) {
+      showAdminNotification('Nama menu wajib diisi.');
+      return;
     }
+    if (!Number.isFinite(numericPrice) || numericPrice <= 0) {
+      showAdminNotification('Harga menu harus lebih dari Rp 0.');
+      return;
+    }
+
+    const payload = {
+      ...newMenu,
+      name: newMenu.name.trim(),
+      price: numericPrice,
+      status: newMenu.status || 'published',
+      is_available:
+        (newMenu.status || 'published') === 'published' ? true : false,
+    };
+
+    try {
+      const res = await fetch(`${API_URL}/api/menus`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (res.ok) {
+        setNewMenu({
+          name: '',
+          description: '',
+          price: '',
+          category: 'Makanan Berat',
+          image_url: '',
+          is_featured: false,
+          status: 'published',
+        });
+        showAdminNotification('Menu baru berhasil ditambahkan.');
+        await fetchMenus('Semua', '', 'admin');
+      }
+    } catch (err) {
+      console.error('Gagal menambah menu:', err);
+    }
+  };
+
+  // 4c & 4d: Edit data menu (nama, deskripsi, harga > 0, kategori, gambar, status)
+  const handleUpdateMenu = async (menuId, updatedFields) => {
+    const numericPrice = Number(updatedFields.price);
+    if (!String(updatedFields.name || '').trim()) {
+      showAdminNotification('Nama menu tidak boleh kosong.');
+      return false;
+    }
+    if (!Number.isFinite(numericPrice) || numericPrice <= 0) {
+      showAdminNotification('Harga menu harus lebih dari Rp 0.');
+      return false;
+    }
+
+    const nextStatus = updatedFields.status || 'published';
+    const payload = {
+      ...updatedFields,
+      name: String(updatedFields.name).trim(),
+      price: numericPrice,
+      status: nextStatus,
+      is_available:
+        nextStatus === 'published'
+          ? Boolean(updatedFields.is_available ?? true)
+          : false,
+    };
+
+    try {
+      const res = await fetch(`${API_URL}/api/menus/${menuId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (res.ok) {
+        showAdminNotification(`Menu "${payload.name}" berhasil diperbarui.`);
+        await fetchMenus('Semua', '', 'admin');
+        return true;
+      }
+    } catch (err) {
+      console.error('Gagal mengedit menu:', err);
+    }
+
+    setMenus((prev) =>
+      prev.map((m) => (m.id === menuId ? { ...m, ...payload } : m))
+    );
+    showAdminNotification(`Menu "${payload.name}" diperbarui secara lokal.`);
+    return true;
+  };
+
+  // 4d: Ubah status menu (published / draft / archived)
+  const handleChangeMenuStatus = async (item, nextStatus) => {
+    const payload = {
+      status: nextStatus,
+      is_available: nextStatus === 'published' ? Boolean(item.is_available) : false,
+    };
+
+    try {
+      const res = await fetch(`${API_URL}/api/menus/${item.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (res.ok) {
+        showAdminNotification(`Status "${item.name}" diubah ke ${nextStatus}.`);
+        await fetchMenus('Semua', '', 'admin');
+        return;
+      }
+    } catch (err) {
+      console.error('Gagal mengubah status menu:', err);
+    }
+
+    setMenus((prev) =>
+      prev.map((m) => (m.id === item.id ? { ...m, ...payload } : m))
+    );
   };
 
   const handleToggleMenuAvailable = async (item) => {
@@ -527,12 +677,13 @@ export default function App() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ is_available: !item.is_available }),
     });
-    fetchMenus();
+    fetchMenus('Semua', '', 'admin');
   };
 
   const handleDeleteMenu = async (id) => {
     await fetch(`${API_URL}/api/menus/${id}`, { method: 'DELETE' });
-    fetchMenus();
+    showAdminNotification('Menu berhasil dihapus.');
+    fetchMenus('Semua', '', 'admin');
   };
 
   const handleUpdateOrderStatus = async (orderId, status) => {
@@ -593,18 +744,27 @@ export default function App() {
 
   if (user.role === 'admin') {
     return (
-      <AdminView
-        user={user}
-        menus={menus}
-        orders={orders}
-        newMenu={newMenu}
-        setNewMenu={setNewMenu}
-        onLogout={handleLogout}
-        onAddMenu={handleAddMenu}
-        onToggleMenuAvailable={handleToggleMenuAvailable}
-        onDeleteMenu={handleDeleteMenu}
-        onUpdateOrderStatus={handleUpdateOrderStatus}
-      />
+      <>
+        {adminToast && (
+          <div className="fixed bottom-6 right-6 z-50 bg-[#1E2532] text-white text-xs md:text-sm font-medium px-4 py-3 rounded-2xl shadow-lg border border-white/10">
+            {adminToast}
+          </div>
+        )}
+        <AdminView
+          user={user}
+          menus={menus}
+          orders={orders}
+          newMenu={newMenu}
+          setNewMenu={setNewMenu}
+          onLogout={handleLogout}
+          onAddMenu={handleAddMenu}
+          onUpdateMenu={handleUpdateMenu}
+          onChangeMenuStatus={handleChangeMenuStatus}
+          onToggleMenuAvailable={handleToggleMenuAvailable}
+          onDeleteMenu={handleDeleteMenu}
+          onUpdateOrderStatus={handleUpdateOrderStatus}
+        />
+      </>
     );
   }
 
@@ -711,7 +871,7 @@ export default function App() {
               menus={menus}
               onSelectCategory={(cat) => {
                 setSelectedCategory(cat);
-                fetchMenus(cat, searchQuery);
+                fetchMenus(cat, searchQuery, user.role);
                 setActiveTab('menu');
               }}
               onSelectMenu={(item) => {
@@ -731,11 +891,11 @@ export default function App() {
               isFavorited={isFavorited}
               onSearchChange={(val) => {
                 setSearchQuery(val);
-                fetchMenus(selectedCategory, val);
+                fetchMenus(selectedCategory, val, user.role);
               }}
               onCategoryChange={(cat) => {
                 setSelectedCategory(cat);
-                fetchMenus(cat, searchQuery);
+                fetchMenus(cat, searchQuery, user.role);
               }}
               onSelectMenu={(item) => {
                 setDetailNote('');
